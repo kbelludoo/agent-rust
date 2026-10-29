@@ -71,13 +71,15 @@ impl WatchdogSentinel {
         }
 
         // 2. Avaliação de Progresso Ativo (Gold, EXP, Stamina ou Kills)
-        let changed = bot.total_gold > state.last_gold
-            || bot.total_exp > state.last_exp
-            || (bot.total_stamina != state.last_stamina && state.last_stamina > 0)
-            || bot.total_kills > state.last_kills;
+        // Regra do Usuário: conferir se algum número aumentou ou diminuiu.
+        // Se ficar parado, forte indício de bot parado.
+        let changed = (bot.total_gold != state.last_gold && (state.last_gold > 0 || bot.total_gold > 0))
+            || (bot.total_exp != state.last_exp && (state.last_exp > 0 || bot.total_exp > 0))
+            || (bot.total_stamina != state.last_stamina && (state.last_stamina > 0 || bot.total_stamina > 0))
+            || (bot.total_kills != state.last_kills && (state.last_kills > 0 || bot.total_kills > 0));
 
         if changed {
-            // Houve evolução: resetamos o cronômetro de stall
+            // Houve evolução/movimentação no jogo: resetamos o cronômetro de stall
             state.last_gold = bot.total_gold;
             state.last_exp = bot.total_exp;
             state.last_stamina = bot.total_stamina;
@@ -88,7 +90,7 @@ impl WatchdogSentinel {
         }
 
         // Se é o primeiro snapshot com valores, registramos a base
-        if state.last_gold == 0 && state.last_exp == 0 && (bot.total_gold > 0 || bot.total_exp > 0) {
+        if state.last_gold == 0 && state.last_exp == 0 && state.last_kills == 0 && (bot.total_gold > 0 || bot.total_exp > 0 || bot.total_kills > 0) {
             state.last_gold = bot.total_gold;
             state.last_exp = bot.total_exp;
             state.last_stamina = bot.total_stamina;
@@ -101,7 +103,10 @@ impl WatchdogSentinel {
         let stall_duration = state.last_change_time.elapsed();
         if stall_duration >= self.stall_threshold {
             let mins = stall_duration.as_secs() / 60;
-            let reason = format!("STALLED há {} minutos (Gold: {}, EXP: {}, Stamina: inalterados)", mins, bot.total_gold, bot.total_exp);
+            let reason = format!(
+                "STALLED há {} minutos (nenhum número aumentou ou diminuiu: Gold={}, EXP={}, Stamina={}, Kills={} - forte indício de bot parado)",
+                mins, bot.total_gold, bot.total_exp, bot.total_stamina, bot.total_kills
+            );
             warn!("🛑 [Sentinel] Bot {} {}", bot.name, reason);
             drop(states);
             self.handle_offline_or_stalled(bot, &reason).await;
@@ -245,5 +250,15 @@ mod tests {
         let state = states.get("test-bot").unwrap();
         assert_eq!(state.restart_attempts, 0, "Deveria ter zerado as tentativas após recuperação");
         assert_eq!(state.last_gold, 200);
+        drop(states);
+
+        // 4º tick: métrica diminuiu (stamina caiu de 50 para 40 por caça ativa) -> deve manter ativo e não stallar
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        bot.total_stamina = 40;
+        sentinel.evaluate_bot(&bot).await;
+        let states = sentinel.states.lock().await;
+        let state = states.get("test-bot").unwrap();
+        assert_eq!(state.last_stamina, 40, "Deveria registrar decréscimo de stamina como atividade");
+        assert_eq!(state.restart_attempts, 0);
     }
 }
