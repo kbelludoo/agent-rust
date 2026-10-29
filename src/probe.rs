@@ -2,7 +2,9 @@ use crate::config::MonitoredBot;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountTelemetry {
@@ -36,7 +38,7 @@ pub struct BotSnapshot {
 #[derive(Clone)]
 pub struct FleetProber {
     client: Client,
-    bots: Vec<MonitoredBot>,
+    bots: Arc<RwLock<Vec<MonitoredBot>>>,
 }
 
 impl FleetProber {
@@ -46,12 +48,22 @@ impl FleetProber {
             .build()
             .unwrap_or_default();
 
-        Self { client, bots }
+        Self {
+            client,
+            bots: Arc::new(RwLock::new(bots)),
+        }
     }
 
-    #[allow(dead_code)]
-    pub fn bots(&self) -> &[MonitoredBot] {
-        &self.bots
+    pub async fn current_bots(&self) -> Vec<MonitoredBot> {
+        let b = self.bots.read().await;
+        b.clone()
+    }
+
+    pub async fn register_discovered_bot(&self, bot: MonitoredBot) {
+        let mut b = self.bots.write().await;
+        if !b.iter().any(|existing| existing.port == bot.port || existing.id == bot.id) {
+            b.push(bot);
+        }
     }
 
     pub async fn probe_bot(&self, bot: &MonitoredBot) -> BotSnapshot {
@@ -131,8 +143,9 @@ impl FleetProber {
     }
 
     pub async fn probe_all(&self) -> Vec<BotSnapshot> {
-        let mut results = Vec::with_capacity(self.bots.len());
-        for b in &self.bots {
+        let current = self.bots.read().await.clone();
+        let mut results = Vec::with_capacity(current.len());
+        for b in &current {
             results.push(self.probe_bot(b).await);
         }
         results
