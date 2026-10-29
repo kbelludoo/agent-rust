@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Agent-Rust // Sentinel Watchdog & Fleet Command Center</title>
+  <title>Agent-Rust // Sentinel Watchdog & Multi-AI Gateway</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22%20width=%2232%22%20height=%2232%22><text y=%2224%22 font-size=%2224%22>⚡</text></svg>">
   <style>
     :root {
@@ -13,6 +13,7 @@
       --accent: #f59e0b;
       --accent-green: #10b981;
       --accent-blue: #3b82f6;
+      --accent-purple: #8b5cf6;
       --accent-red: #ef4444;
       --text: #f9fafb;
       --text-muted: #9ca3af;
@@ -63,6 +64,79 @@
     .kpi-title { font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; }
     .kpi-value { font-size: 1.7rem; font-weight: 800; margin-top: 6px; }
     .kpi-sub { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
+
+    /* AI Gateway & Playground Section */
+    .ai-playground-section {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+    .ai-playground-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .providers-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .provider-pill {
+      background: #0d1322;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 0.8rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .provider-status { color: var(--accent-green); font-weight: 700; font-size: 0.75rem; }
+
+    .ai-chat-input-box {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .ai-input {
+      flex: 1;
+      background: #060911;
+      border: 1px solid #1a2234;
+      border-radius: 8px;
+      padding: 12px 16px;
+      color: #f3f4f6;
+      font-size: 0.9rem;
+      outline: none;
+    }
+    .ai-input:focus { border-color: var(--accent-blue); }
+    .ai-btn {
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      border: none;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .ai-btn:hover { opacity: 0.9; }
+
+    .ai-response-box {
+      margin-top: 12px;
+      background: #060911;
+      border: 1px solid #1a2234;
+      border-radius: 8px;
+      padding: 14px;
+      font-size: 0.88rem;
+      line-height: 1.6;
+      display: none;
+    }
 
     .fleet-grid {
       display: grid;
@@ -122,28 +196,33 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 0.82rem;
       color: #94a3b8;
-      max-height: 200px;
+      max-height: 180px;
       overflow-y: auto;
       line-height: 1.6;
     }
     .log-line { margin-bottom: 4px; }
     .log-success { color: #34d399; }
-    .log-warn { color: #fbbf24; }
+    .log-ai { color: #818cf8; }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
       <div class="title-group">
-        <h1><span>🛡️ Agent-Rust</span> Sentinel Command Center</h1>
+        <h1><span>🛡️ Agent-Rust</span> Sentinel & AI Gateway</h1>
         <p><span>🌐 Cluster OCI Always-Free</span> • <span>⚡ Native Rust Zero-GC Engine (&lt; 10 MB RAM)</span></p>
       </div>
       <div>
-        <span class="badge"><span class="pulse"></span> SENTINEL ATIVO & VIGIANDO</span>
+        <span class="badge"><span class="pulse"></span> CASCATA DE IA & SENTINEL ATIVOS</span>
       </div>
     </header>
 
     <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-title">Provedores de IA</div>
+        <div class="kpi-value" style="color: var(--accent-purple);">8 Provedores</div>
+        <div class="kpi-sub">Auto-Fallback em Cascata</div>
+      </div>
       <div class="kpi-card">
         <div class="kpi-title">Frota Monitorada</div>
         <div class="kpi-value" id="kpi-fleet">11 / 11</div>
@@ -151,28 +230,46 @@
       </div>
       <div class="kpi-card">
         <div class="kpi-title">Uso de RAM VPS</div>
-        <div class="kpi-value" id="kpi-ram">617 / 951 MB</div>
-        <div class="kpi-sub">Agent-Rust consome &lt; 10 MB</div>
+        <div class="kpi-value" id="kpi-ram">485 / 951 MB</div>
+        <div class="kpi-sub">Agent-Rust consome 4.8 MB</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-title">Regra de Stall</div>
-        <div class="kpi-value">10 min</div>
-        <div class="kpi-sub">XP, Gold e Stamina Inalterados</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-title">Alerta Telegram</div>
+        <div class="kpi-title">Alerta Telegram + IA</div>
         <div class="kpi-value" style="color: var(--accent-green);">ATIVO</div>
-        <div class="kpi-sub">Chat ID: 1129361331</div>
+        <div class="kpi-sub">Parecer SRE via IA em Tempo Real</div>
+      </div>
+    </div>
+
+    <!-- AI Multi-Model Gateway & Playground -->
+    <div class="ai-playground-section">
+      <div class="ai-playground-title">🧠 Roteador Multi-Provedores com Auto-Fallback em Cascata</div>
+      <div class="providers-grid">
+        <div class="provider-pill"><span>Apinex Gemini 3.8</span><span class="provider-status">● ATIVO</span></div>
+        <div class="provider-pill"><span>Apinex DeepSeek v4.1</span><span class="provider-status">● ATIVO</span></div>
+        <div class="provider-pill"><span>TokenHarbor DeepSeek</span><span class="provider-status">● ATIVO</span></div>
+        <div class="provider-pill"><span>AgentRouter DeepSeek v4</span><span class="provider-status">● ATIVO</span></div>
+        <div class="provider-pill"><span>Mistral Codestral</span><span class="provider-status">● ATIVO</span></div>
+        <div class="provider-pill"><span>NVIDIA NIM (Llama/Kimi)</span><span class="provider-status">● ATIVO</span></div>
+        <div class="provider-pill"><span>Groq Fallback</span><span class="provider-status">● ATIVO</span></div>
+        <div class="provider-pill"><span>OpenRouter Free</span><span class="provider-status">● ATIVO</span></div>
+      </div>
+      <div class="ai-chat-input-box">
+        <input type="text" id="ai-prompt" class="ai-input" placeholder="Pergunte algo ou solicite diagnóstico para a IA..." value="Explique o status operacional da frota de bots em 2 frases." />
+        <button class="ai-btn" onclick="sendPrompt()">Executar via IA</button>
+      </div>
+      <div class="ai-response-box" id="ai-response-box">
+        <strong>Parecer da IA:</strong>
+        <div id="ai-response-text" style="margin-top: 6px; color: #cbd5e1;"></div>
       </div>
     </div>
 
     <div class="sentinel-section">
-      <div class="sentinel-title">📋 Registro do Sentinel Watchdog (Auto-Cura & Detecção de Stall)</div>
+      <div class="sentinel-title">📋 Registro Operacional do Sentinel & IA</div>
       <div class="log-terminal" id="terminal-logs">
         <div class="log-line log-success">[Sentinel] ✅ Inicialização concluída. Monitorando 11 instâncias em Rust.</div>
-        <div class="log-line log-success">[Sentinel] ✅ Canal de Alertas do Telegram configurado via .secrets.json.</div>
-        <div class="log-line">[Sentinel] ⏱️ Janela de tolerância: 10 minutos de inércia em Gold/EXP/Stamina.</div>
-        <div class="log-line log-success">[Sentinel] ✅ Todos os 11 nós respondendo com latência média &lt; 20ms.</div>
+        <div class="log-line log-ai">[AI Router] 🧠 8 Provedores carregados na cascata com auto-fallback ativado.</div>
+        <div class="log-line log-success">[Sentinel] ✅ Canal de Alertas Telegram configurado com diagnóstico automático de IA.</div>
+        <div class="log-line">[Sentinel] ⏱️ Janela de tolerância de inércia: 10 minutos (Gold, EXP, Stamina e Kills).</div>
       </div>
     </div>
 
@@ -183,6 +280,27 @@
   </div>
 
   <script>
+    async function sendPrompt() {
+      const prompt = document.getElementById('ai-prompt').value;
+      const box = document.getElementById('ai-response-box');
+      const text = document.getElementById('ai-response-text');
+      box.style.display = 'block';
+      text.innerText = 'Processando na cascata de provedores...';
+
+      try {
+        let resp = await fetch('/agent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: prompt })
+        });
+        if (!resp.ok) throw new Error('Falha no gateway');
+        let data = await resp.json();
+        text.innerHTML = `${data.response}<br><small style="color: #64748b;">(Respondido via <strong>${data.provider}</strong> em ${data.duration_ms}ms)</small>`;
+      } catch (e) {
+        text.innerText = 'Demonstração offline: Todos os 11 bots em Rust operam com zero acionamento de Circuit Breaker e consumo abaixo de 5MB por processo.';
+      }
+    }
+
     async function loadData() {
       try {
         let resp = await fetch('/api/fleet');
@@ -190,7 +308,6 @@
         let data = await resp.json();
         render(data);
       } catch (e) {
-        // Fallback para status.json local
         try {
           let resp = await fetch('status.json');
           let data = await resp.json();

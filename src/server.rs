@@ -1,3 +1,5 @@
+use crate::ai::router::ModelRouter;
+use crate::ai::types::{AgentRequest, ChatCompletionRequest, ModelEntry, ModelListResponse};
 use crate::metrics::HostMetrics;
 use crate::probe::BotSnapshot;
 use axum::{
@@ -25,10 +27,16 @@ pub struct FleetReport {
 #[derive(Clone)]
 pub struct AppState {
     pub report: Arc<RwLock<FleetReport>>,
+    pub router: Arc<ModelRouter>,
 }
 
 pub fn create_router(state: AppState) -> Router {
     Router::new()
+        // OpenAI-Compatible Endpoints
+        .route("/v1/chat/completions", post(chat_completions_handler))
+        .route("/v1/models", get(models_handler))
+        .route("/agent", post(agent_handler))
+        // Fleet & Watchdog Endpoints
         .route("/api/health", get(health_handler))
         .route("/api/fleet", get(fleet_handler))
         .route("/api/restart/:id", post(restart_handler))
@@ -37,12 +45,49 @@ pub fn create_router(state: AppState) -> Router {
 }
 
 async fn health_handler() -> &'static str {
-    "OK - Agent-Rust Sentinel Running"
+    "OK - Agent-Rust Sentinel & AI Gateway Running"
 }
 
 async fn fleet_handler(State(state): State<AppState>) -> impl IntoResponse {
     let report = state.report.read().await;
     Json((*report).clone())
+}
+
+async fn models_handler(State(state): State<AppState>) -> impl IntoResponse {
+    let providers = state.router.active_providers();
+    let data: Vec<ModelEntry> = providers
+        .iter()
+        .map(|p| ModelEntry {
+            id: p.default_model.clone(),
+            object: "model".to_string(),
+            owned_by: p.name.clone(),
+        })
+        .collect();
+
+    Json(ModelListResponse {
+        object: "list".to_string(),
+        data,
+    })
+}
+
+async fn chat_completions_handler(
+    State(state): State<AppState>,
+    Json(req): Json<ChatCompletionRequest>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    match state.router.chat_completion(req).await {
+        Ok(resp) => Ok(Json(resp)),
+        Err(e) => Err((StatusCode::BAD_GATEWAY, format!("AI Cascade Error: {}", e))),
+    }
+}
+
+async fn agent_handler(
+    State(state): State<AppState>,
+    Json(req): Json<AgentRequest>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    match state.router.execute_agent(&req.message).await {
+        Ok(resp) => Ok(Json(resp)),
+        Err(e) => Err((StatusCode::BAD_GATEWAY, format!("AI Error: {}", e))),
+    }
 }
 
 async fn restart_handler(Path(id): Path<String>) -> (StatusCode, Json<serde_json::Value>) {

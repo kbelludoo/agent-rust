@@ -1,6 +1,8 @@
+use crate::ai::diagnostician::BotDiagnostician;
 use crate::probe::BotSnapshot;
 use crate::telegram::TelegramNotifier;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::process::Command;
 use tokio::sync::Mutex;
@@ -35,15 +37,21 @@ impl Default for BotProgressState {
 
 pub struct WatchdogSentinel {
     telegram: TelegramNotifier,
+    diagnostician: Option<Arc<BotDiagnostician>>,
     stall_threshold: Duration,
     alert_cooldown: Duration,
     states: Mutex<HashMap<String, BotProgressState>>,
 }
 
 impl WatchdogSentinel {
-    pub fn new(telegram: TelegramNotifier, stall_threshold_sec: u64) -> Self {
+    pub fn new(
+        telegram: TelegramNotifier,
+        diagnostician: Option<Arc<BotDiagnostician>>,
+        stall_threshold_sec: u64,
+    ) -> Self {
         Self {
             telegram,
+            diagnostician,
             stall_threshold: Duration::from_secs(stall_threshold_sec),
             alert_cooldown: Duration::from_secs(900), // 15 minutos entre alertas do mesmo bot
             states: Mutex::new(HashMap::new()),
@@ -148,12 +156,19 @@ impl WatchdogSentinel {
             }
         }
 
-        // Se falhou ou atingiu o limite de tolerância, dispara mensagem no Telegram
+        // Se falhou ou atingiu o limite de tolerância, dispara mensagem no Telegram com Parecer da IA
         if should_alert {
             let status_cura = if restart_success {
                 "Reinicialização executada, mas bot ainda não pontuou."
             } else {
                 "Tentativa de reinicialização automática falhou!"
+            };
+
+            // Consulta IA para diagnóstico inteligente dos logs
+            let ai_diagnostic = if let Some(diag) = &self.diagnostician {
+                diag.diagnose_bot(&bot.name, &bot.service_name, reason).await
+            } else {
+                "Análise heurística de SRE: verifique conexão e credenciais do bot.".to_string()
             };
 
             let msg = format!(
@@ -162,7 +177,9 @@ impl WatchdogSentinel {
                  • *Porta:* `{}`\n\
                  • *Motivo:* {}\n\
                  • *Tentativas de Auto-Cura:* {}\n\
-                 • *Diagnóstico:* {}\n\n\
+                 • *Ação do Sistema:* {}\n\n\
+                 🧠 *Parecer da IA (Cascade Router):*\n\
+                 _{}_\n\n\
                  🔗 *Dashboard:* {}\n\
                  _Ação humana recomendada se o erro persistir._",
                 bot.name,
@@ -170,6 +187,7 @@ impl WatchdogSentinel {
                 reason,
                 attempts,
                 status_cura,
+                ai_diagnostic,
                 bot.dashboard_url
             );
 
@@ -185,7 +203,7 @@ mod tests {
     #[tokio::test]
     async fn test_sentinel_stall_detection() {
         let telegram = TelegramNotifier::new(String::new(), String::new());
-        let sentinel = WatchdogSentinel::new(telegram, 1); // 1 segundo para teste rápido
+        let sentinel = WatchdogSentinel::new(telegram, None, 1); // 1 segundo para teste rápido
 
         let mut bot = BotSnapshot {
             id: "test-bot".to_string(),
