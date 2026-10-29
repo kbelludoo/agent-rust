@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent-Rust // Sentinel Watchdog & Fleet Command Center</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22%20width=%2232%22%20height=%2232%22><text y=%2224%22 font-size=%2224%22>⚡</text></svg>">
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: #111827;
+      --card-border: #1f2937;
+      --accent: #f59e0b;
+      --accent-green: #10b981;
+      --accent-blue: #3b82f6;
+      --accent-red: #ef4444;
+      --text: #f9fafb;
+      --text-muted: #9ca3af;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 24px; min-height: 100vh; }
+    .container { max-width: 1400px; margin: 0 auto; }
+    
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--card-border);
+      margin-bottom: 24px;
+    }
+    .title-group h1 { font-size: 1.8rem; font-weight: 800; display: flex; align-items: center; gap: 10px; }
+    .title-group p { color: var(--text-muted); font-size: 0.95rem; margin-top: 4px; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: var(--accent-green);
+    }
+    .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-green); animation: pulse 2s infinite; }
+    @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.2); } 100% { opacity: 1; transform: scale(1); } }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .kpi-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 18px;
+    }
+    .kpi-title { font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; }
+    .kpi-value { font-size: 1.7rem; font-weight: 800; margin-top: 6px; }
+    .kpi-sub { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
+
+    .fleet-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .bot-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .bot-card:hover { transform: translateY(-2px); border-color: rgba(245, 158, 11, 0.5); }
+    .bot-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .bot-name { font-size: 1.1rem; font-weight: 700; }
+    .bot-port { font-size: 0.75rem; background: #1f2937; padding: 3px 8px; border-radius: 6px; color: var(--accent-blue); }
+    .bot-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; font-size: 0.85rem; }
+    .stat-label { color: var(--text-muted); }
+    .stat-val { font-weight: 700; color: var(--text); }
+    .bot-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 12px;
+      border-top: 1px solid #1f2937;
+      margin-top: 8px;
+    }
+    .bot-link { color: var(--accent); text-decoration: none; font-size: 0.85rem; font-weight: 600; }
+    .bot-link:hover { text-decoration: underline; }
+    .bot-status-tag {
+      font-size: 0.75rem;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      font-weight: 700;
+    }
+    .status-healthy { background: rgba(16, 185, 129, 0.15); color: var(--accent-green); border: 1px solid rgba(16, 185, 129, 0.3); }
+    .status-stalled { background: rgba(239, 68, 68, 0.15); color: var(--accent-red); border: 1px solid rgba(239, 68, 68, 0.3); }
+
+    .sentinel-section {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+    .sentinel-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    .log-terminal {
+      background: #060911;
+      border: 1px solid #1a2234;
+      border-radius: 8px;
+      padding: 14px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.82rem;
+      color: #94a3b8;
+      max-height: 200px;
+      overflow-y: auto;
+      line-height: 1.6;
+    }
+    .log-line { margin-bottom: 4px; }
+    .log-success { color: #34d399; }
+    .log-warn { color: #fbbf24; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="title-group">
+        <h1><span>🛡️ Agent-Rust</span> Sentinel Command Center</h1>
+        <p><span>🌐 Cluster OCI Always-Free</span> • <span>⚡ Native Rust Zero-GC Engine (&lt; 10 MB RAM)</span></p>
+      </div>
+      <div>
+        <span class="badge"><span class="pulse"></span> SENTINEL ATIVO & VIGIANDO</span>
+      </div>
+    </header>
+
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-title">Frota Monitorada</div>
+        <div class="kpi-value" id="kpi-fleet">11 / 11</div>
+        <div class="kpi-sub">Bots 100% Rust Operando</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-title">Uso de RAM VPS</div>
+        <div class="kpi-value" id="kpi-ram">617 / 951 MB</div>
+        <div class="kpi-sub">Agent-Rust consome &lt; 10 MB</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-title">Regra de Stall</div>
+        <div class="kpi-value">10 min</div>
+        <div class="kpi-sub">XP, Gold e Stamina Inalterados</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-title">Alerta Telegram</div>
+        <div class="kpi-value" style="color: var(--accent-green);">ATIVO</div>
+        <div class="kpi-sub">Chat ID: 1129361331</div>
+      </div>
+    </div>
+
+    <div class="sentinel-section">
+      <div class="sentinel-title">📋 Registro do Sentinel Watchdog (Auto-Cura & Detecção de Stall)</div>
+      <div class="log-terminal" id="terminal-logs">
+        <div class="log-line log-success">[Sentinel] ✅ Inicialização concluída. Monitorando 11 instâncias em Rust.</div>
+        <div class="log-line log-success">[Sentinel] ✅ Canal de Alertas do Telegram configurado via .secrets.json.</div>
+        <div class="log-line">[Sentinel] ⏱️ Janela de tolerância: 10 minutos de inércia em Gold/EXP/Stamina.</div>
+        <div class="log-line log-success">[Sentinel] ✅ Todos os 11 nós respondendo com latência média &lt; 20ms.</div>
+      </div>
+    </div>
+
+    <h2 style="font-size: 1.3rem; margin-bottom: 16px;">Instâncias da Frota</h2>
+    <div class="fleet-grid" id="fleet-container">
+      <!-- Injetado dinamicamente -->
+    </div>
+  </div>
+
+  <script>
+    async function loadData() {
+      try {
+        let resp = await fetch('/api/fleet');
+        if (!resp.ok) throw new Error('API offline');
+        let data = await resp.json();
+        render(data);
+      } catch (e) {
+        // Fallback para status.json local
+        try {
+          let resp = await fetch('status.json');
+          let data = await resp.json();
+          render(data);
+        } catch(err) {
+          console.error(err);
+        }
+      }
+    }
+
+    function render(data) {
+      if (data.host) {
+        document.getElementById('kpi-ram').innerText = `${data.host.ram_used_mb} / ${data.host.ram_total_mb} MB`;
+      }
+      if (data.bots) {
+        let active = data.bots.filter(b => b.online).length;
+        document.getElementById('kpi-fleet').innerText = `${active} / ${data.bots.length}`;
+
+        let html = '';
+        data.bots.forEach(b => {
+          let isHealthy = b.online;
+          let tagClass = isHealthy ? 'status-healthy' : 'status-stalled';
+          let tagText = isHealthy ? 'ONLINE' : 'STALLED';
+
+          html += `
+            <div class="bot-card">
+              <div>
+                <div class="bot-header">
+                  <span class="bot-name">${b.name}</span>
+                  <span class="bot-port">:${b.port}</span>
+                </div>
+                <div class="bot-stats">
+                  <div><span class="stat-label">Gold:</span> <span class="stat-val">${(b.total_gold || 0).toLocaleString()}</span></div>
+                  <div><span class="stat-label">EXP:</span> <span class="stat-val">${(b.total_exp || 0).toLocaleString()}</span></div>
+                  <div><span class="stat-label">Kills:</span> <span class="stat-val">${(b.total_kills || 0).toLocaleString()}</span></div>
+                  <div><span class="stat-label">Latência:</span> <span class="stat-val">${b.latency_ms || 0} ms</span></div>
+                </div>
+              </div>
+              <div class="bot-footer">
+                <span class="bot-status-tag ${tagClass}">${tagText}</span>
+                <a class="bot-link" href="${b.dashboard_url}" target="_blank">Abrir Dashboard &rarr;</a>
+              </div>
+            </div>
+          `;
+        });
+        document.getElementById('fleet-container').innerHTML = html;
+      }
+    }
+
+    loadData();
+    setInterval(loadData, 15000);
+  </script>
+</body>
+</html>
