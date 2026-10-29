@@ -1,4 +1,5 @@
 use crate::ai::diagnostician::BotDiagnostician;
+use crate::ai::jev::JevAction;
 use crate::probe::BotSnapshot;
 use crate::telegram::TelegramNotifier;
 use std::collections::HashMap;
@@ -114,11 +115,30 @@ impl WatchdogSentinel {
     }
 
     async fn handle_offline_or_stalled(&self, bot: &BotSnapshot, reason: &str) {
+        // Coleta logs recentes do systemd para enriquecer a triagem Jev e o diagnóstico LLM
+        let logs = if let Some(diag) = &self.diagnostician {
+            diag.fetch_recent_logs(&bot.service_name, 25).await
+        } else {
+            String::new()
+        };
+
+        // Triagem Rápida System One (<200ms) com o modelo Jev da TypeSafe AI
+        let jev_decision = if let Some(diag) = &self.diagnostician {
+            diag.triage_bot(&bot.name, &bot.service_name, reason, &logs).await
+        } else {
+            None
+        };
+
         let (should_restart, should_alert, attempts) = {
             let mut states = self.states.lock().await;
             let state = states.entry(bot.id.clone()).or_default();
 
-            let restart_due = state.last_restart_time.is_none_or(|t| t.elapsed() > Duration::from_secs(180));
+            // Se o Jev sugerir esperar (ex: bot em cooldown normal ou carregando) com alta confiança, adiamos o restart
+            let jev_wait = jev_decision.as_ref().is_some_and(|d| {
+                matches!(d.action, JevAction::WaitLonger) && d.action_confidence >= 0.70
+            });
+
+            let restart_due = !jev_wait && state.last_restart_time.is_none_or(|t| t.elapsed() > Duration::from_secs(180));
             let alert_due = state.last_telegram_alert_time.is_none_or(|t| t.elapsed() > self.alert_cooldown);
 
             if restart_due {
@@ -127,7 +147,13 @@ impl WatchdogSentinel {
             }
 
             let attempts = state.restart_attempts;
-            let alert = alert_due && attempts >= 1;
+
+            // Se Jev indicar falha crítica iminente ou ação explícita de alertar operador, forçamos o alerta
+            let jev_force_alert = jev_decision.as_ref().is_some_and(|d| {
+                d.is_critical || matches!(d.action, JevAction::AlertOperator)
+            });
+
+            let alert = alert_due && (attempts >= 1 || jev_force_alert);
 
             if alert {
                 state.last_telegram_alert_time = Some(Instant::now());
@@ -165,15 +191,33 @@ impl WatchdogSentinel {
         if should_alert {
             let status_cura = if restart_success {
                 "Reinicialização executada, mas bot ainda não pontuou."
-            } else {
+            } else if should_restart {
                 "Tentativa de reinicialização automática falhou!"
+            } else {
+                "Aguardando ciclo de auto-cura conforme recomendação System One."
             };
 
             // Consulta IA para diagnóstico inteligente dos logs
             let ai_diagnostic = if let Some(diag) = &self.diagnostician {
-                diag.diagnose_bot(&bot.name, &bot.service_name, reason).await
+                diag.diagnose_bot(&bot.name, &bot.service_name, reason, &logs).await
             } else {
                 "Análise heurística de SRE: verifique conexão e credenciais do bot.".to_string()
+            };
+
+            let jev_summary = if let Some(ref dec) = jev_decision {
+                format!(
+                    "⚡ *Decisão Rápida Jev (System One):*\n\
+                     • *Ação Recomendada:* `{}` (confiança: {:.0}%)\n\
+                     • *Urgência:* `{:.1}/2.0` | *Crítico:* `{}`\n\
+                     • *Latência de Decisão:* `{}ms`\n\n",
+                    dec.action,
+                    dec.action_confidence * 100.0,
+                    dec.urgency_score,
+                    if dec.is_critical { "SIM ⚠️" } else { "NÃO ✅" },
+                    dec.latency_ms
+                )
+            } else {
+                String::new()
             };
 
             let msg = format!(
@@ -183,6 +227,7 @@ impl WatchdogSentinel {
                  • *Motivo:* {}\n\
                  • *Tentativas de Auto-Cura:* {}\n\
                  • *Ação do Sistema:* {}\n\n\
+                 {}\
                  🧠 *Parecer da IA (Cascade Router):*\n\
                  _{}_\n\n\
                  🔗 *Dashboard:* {}\n\
@@ -192,6 +237,7 @@ impl WatchdogSentinel {
                 reason,
                 attempts,
                 status_cura,
+                jev_summary,
                 ai_diagnostic,
                 bot.dashboard_url
             );
@@ -208,7 +254,7 @@ mod tests {
     #[tokio::test]
     async fn test_sentinel_stall_detection() {
         let telegram = TelegramNotifier::new(String::new(), String::new());
-        let sentinel = WatchdogSentinel::new(telegram, None, 1); // 1 segundo para teste rápido
+        let sentinel = WatchdogSentinel::new(telegram, None, 1);
 
         let mut bot = BotSnapshot {
             id: "test-bot".to_string(),
@@ -230,8 +276,12 @@ mod tests {
         // 1º tick: baseline inicial
         sentinel.evaluate_bot(&bot).await;
 
-        // Dorme 1.2 segundos sem alterar métricas
-        tokio::time::sleep(Duration::from_millis(1200)).await;
+        // Simula passagem de tempo sem dormir (determinístico)
+        {
+            let mut states = sentinel.states.lock().await;
+            let state = states.get_mut("test-bot").unwrap();
+            state.last_change_time = Instant::now() - Duration::from_secs(2);
+        }
 
         // 2º tick: métricas inalteradas -> deve detectar stall
         sentinel.evaluate_bot(&bot).await;
@@ -253,7 +303,6 @@ mod tests {
         drop(states);
 
         // 4º tick: métrica diminuiu (stamina caiu de 50 para 40 por caça ativa) -> deve manter ativo e não stallar
-        tokio::time::sleep(Duration::from_millis(500)).await;
         bot.total_stamina = 40;
         sentinel.evaluate_bot(&bot).await;
         let states = sentinel.states.lock().await;

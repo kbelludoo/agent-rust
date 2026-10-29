@@ -1,3 +1,4 @@
+use crate::ai::jev::{JevClient, JevTriageDecision};
 use crate::ai::router::ModelRouter;
 use std::sync::Arc;
 use tokio::process::Command;
@@ -6,11 +7,19 @@ use tracing::{info, warn};
 #[derive(Clone)]
 pub struct BotDiagnostician {
     router: Arc<ModelRouter>,
+    jev: Arc<JevClient>,
 }
 
 impl BotDiagnostician {
     pub fn new(router: Arc<ModelRouter>) -> Self {
-        Self { router }
+        Self {
+            router,
+            jev: Arc::new(JevClient::new()),
+        }
+    }
+
+    pub fn jev(&self) -> &Arc<JevClient> {
+        &self.jev
     }
 
     /// Captura as últimas linhas de log de um serviço systemd
@@ -41,10 +50,26 @@ impl BotDiagnostician {
         }
     }
 
+    /// Executa triagem ultrarrápida System One (<200ms) com o modelo Jev
+    pub async fn triage_bot(
+        &self,
+        bot_name: &str,
+        service_name: &str,
+        reason: &str,
+        logs: &str,
+    ) -> Option<JevTriageDecision> {
+        match self.jev.triage_incident(bot_name, service_name, reason, logs).await {
+            Ok(dec) => Some(dec),
+            Err(e) => {
+                warn!("⚠️ [Diagnostician] Falha na triagem rápida Jev: {}", e);
+                None
+            }
+        }
+    }
+
     /// Executa diagnóstico do erro usando a IA (com auto-fallback)
-    pub async fn diagnose_bot(&self, bot_name: &str, service_name: &str, reason: &str) -> String {
+    pub async fn diagnose_bot(&self, bot_name: &str, service_name: &str, reason: &str, logs: &str) -> String {
         info!("🔍 [Diagnostician] Acionando análise de IA para o bot {} ({})", bot_name, service_name);
-        let logs = self.fetch_recent_logs(service_name, 25).await;
 
         let prompt = format!(
             "Você é um especialista em SRE e bots. O bot '{}' travou com o motivo: '{}'.\n\

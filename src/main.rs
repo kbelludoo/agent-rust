@@ -43,9 +43,13 @@ async fn main() -> anyhow::Result<()> {
         info!("ℹ️ [Agent-Rust] Telegram não configurado (nenhum .secrets.json encontrado).");
     }
 
-    // Inicializa o Router Multi-Provedor de IA com Auto-Fallback
+    // Inicializa o Router Multi-Provedor de IA com Auto-Fallback e Jev System One
     let ai_router = Arc::new(ModelRouter::new());
     let diagnostician = Arc::new(BotDiagnostician::new(Arc::clone(&ai_router)));
+    let jev = Arc::clone(diagnostician.jev());
+    if jev.is_configured() {
+        info!("⚡ [Agent-Rust] Jev System One Client ativo (TypeSafe AI <100ms Triage)");
+    }
     let auto_discovery = Arc::new(BotAutoDiscovery::new());
 
     let prober = FleetProber::new(cfg.bots.clone());
@@ -68,6 +72,7 @@ async fn main() -> anyhow::Result<()> {
     let app_state = AppState {
         report: Arc::clone(&report_state),
         router: Arc::clone(&ai_router),
+        jev,
     };
 
     // Loop em background para auto-discovery dinâmico e monitoramento
