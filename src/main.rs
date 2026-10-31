@@ -125,7 +125,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // Inicia o servidor HTTP Axum (OpenAI Gateway + Sentinel REST)
-    let router = server::create_router(app_state);
+    let router = server::create_router(app_state, cfg.web_dir);
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.port));
     info!("🌐 [Agent-Rust] Servidor OpenAI Gateway & REST ouvindo em http://{}", addr);
 

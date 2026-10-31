@@ -42,8 +42,8 @@ pub struct AppState {
     pub jev: Arc<JevClient>,
 }
 
-pub fn create_router(state: AppState) -> Router {
-    Router::new()
+pub fn create_router(state: AppState, web_dir: Option<String>) -> Router {
+    let mut router = Router::new()
         // OpenAI-Compatible Endpoints
         .route("/v1/chat/completions", post(chat_completions_handler))
         .route("/v1/models", get(models_handler))
@@ -55,7 +55,16 @@ pub fn create_router(state: AppState) -> Router {
         // Jev System One Triager
         .route("/api/jev/triage", post(jev_triage_handler))
         .layer(CorsLayer::permissive())
-        .with_state(state)
+        .with_state(state);
+
+    if let Some(dir) = web_dir {
+        if std::path::Path::new(&dir).exists() {
+            info!("📁 [Agent-Rust] Servindo arquivos web estáticos de: {}", dir);
+            router = router.fallback_service(tower_http::services::ServeDir::new(dir));
+        }
+    }
+
+    router
 }
 
 async fn health_handler() -> &'static str {

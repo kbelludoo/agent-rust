@@ -25,6 +25,7 @@ pub struct SecretsConfig {
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub port: u16,
+    pub web_dir: Option<String>,
     pub poll_interval_sec: u64,
     pub stall_threshold_sec: u64,
     pub telegram_token: String,
@@ -127,8 +128,32 @@ impl AppConfig {
             },
         ];
 
+        let mut port = 8888;
+        let mut web_dir = None;
+        let args: Vec<String> = env::args().collect();
+        let mut i = 1;
+        while i < args.len() {
+            if (args[i] == "-serve" || args[i] == "--port") && i + 1 < args.len() {
+                if let Ok(p) = args[i + 1].parse::<u16>() {
+                    port = p;
+                }
+                i += 2;
+            } else if (args[i] == "-web-dir" || args[i] == "--web-dir") && i + 1 < args.len() {
+                web_dir = Some(args[i + 1].clone());
+                i += 2;
+            } else {
+                i += 1;
+            }
+        }
+        if let Ok(p_str) = env::var("PORT") {
+            if let Ok(p) = p_str.parse::<u16>() {
+                port = p;
+            }
+        }
+
         Self {
-            port: 8082,
+            port,
+            web_dir,
             poll_interval_sec: 30,
             stall_threshold_sec: 600, // 10 minutos sem alteração de métricas
             telegram_token,
